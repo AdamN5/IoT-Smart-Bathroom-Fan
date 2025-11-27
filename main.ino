@@ -1,16 +1,14 @@
 #include <Arduino.h>
-#include <DFRobot_DHT11.h>
+#include <Adafruit_BME280.h>
+#include <Wire.h>
 
-//                      PIN SETUP 
-#define PIN_DHT      17
-#define PIN_TRIG     5
-#define PIN_ECHO     18
-#define PIN_MQ7_ADC  34
-#define PIN_RELAY    26   // SIG1
+#define PIN_TRIG      5
+#define PIN_ECHO      18
+#define PIN_MQ7_ADC   34
+#define PIN_RELAY     26
 
-DFRobot_DHT11 dht;
+Adafruit_BME280 bme;
 
-// Relay is ACTIVE-HIGH 
 const bool relayActiveLow = false;
 
 void fanSet(bool on) {
@@ -21,18 +19,15 @@ bool fanGet() {
   return relayActiveLow ? (s == LOW) : (s == HIGH);
 }
 
-  //                Modes
 enum Mode { AUTO_HUMID = 1, OCCUPANCY = 2, GAS_SAFETY = 3, MANUAL = 4 };
 Mode mode = AUTO_HUMID;
 
-  //                Settings
-float     rhSetpoint      = 65.0;            // %Relative Humidity
-float     rhHyst          = 5.0;             // %Relative Humidity hysteresis
-uint16_t  occDistanceCm   = 120;             // Distance in cm for occupancy
-uint32_t  occBoostMs      = 3UL * 60UL * 1000UL; // 3 minutes boost after occupancy
-uint16_t  mq7ThresholdRaw = 1800;            // MQ7 ADC threshold
+float     rhSetpoint      = 65.0;
+float     rhHyst          = 5.0;
+uint16_t  occDistanceCm   = 120;
+uint32_t  occBoostMs      = 3UL * 60UL * 1000UL;
+uint16_t  mq7ThresholdRaw = 1800;
 
-  //                State
 uint32_t  lastOccTriggerMs = 0;
 
 long readDistanceCm() {
@@ -45,32 +40,32 @@ long readDistanceCm() {
 }
 
 void printStatus(float h, float t, long dist, int mqRaw) {
-  float espVolts = (mqRaw * 3.3f) / 4095.0f;
-  float aoVolts  = espVolts / 0.4f; // 10k/15k divider -> 0.4 ratio to ESP
-  Serial.printf("[Mode %d] RH=%.1f%%  T=%.1f°C  Dist=%ldcm  MQ7=%d (ESP=%.2fV AO≈%.2fV)  Fan:%s\n",
-                mode, h, t, dist, mqRaw, espVolts, aoVolts, fanGet() ? "ON" : "OFF");
+  Serial.printf("[Mode %d] RH=%.1f%%  T=%.1f°C  Dist=%ldcm  MQ7=%d  Fan:%s\n",
+                mode, h, t, dist, mqRaw, fanGet() ? "ON" : "OFF");
 }
 
-//                  Setup
 void setup() {
   Serial.begin(115200);
 
   pinMode(PIN_TRIG, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
   pinMode(PIN_RELAY, OUTPUT);
-
-  // Make sure fan is OFF at start
   fanSet(false);
+
+  Wire.begin();
+  if (!bme.begin(0x76)) {
+    Serial.println("BME280 not found!");
+    while (1) delay(100);
+  }
 
   Serial.println("ESP32 Smart Fan");
   Serial.println("Commands: mode 1|2|3|4, on, off, set rh <val>, set mq <val>");
 }
 
-//                  Main Loop
 void loop() {
-  dht.read(PIN_DHT);
-  float h = dht.humidity;
-  float t = dht.temperature;
+
+  float h = bme.readHumidity();
+  float t = bme.readTemperature();
 
   long dist = readDistanceCm();
   int  mqRaw = analogRead(PIN_MQ7_ADC);
@@ -101,7 +96,6 @@ void loop() {
       break;
   }
 
-  // safety incase gas is too high
   if (mqRaw > mq7ThresholdRaw + 600) wantFan = true;
 
   fanSet(wantFan);
@@ -113,14 +107,17 @@ void loop() {
   }
 
   if (Serial.available()) {
-    String s = Serial.readStringUntil('\n'); s.trim();
+    String s = Serial.readStringUntil('\n');
+    s.trim();
+
     if (s.startsWith("mode")) {
       int m = s.substring(5).toInt();
       if (m >= 1 && m <= 4) { mode = (Mode)m; Serial.printf("Mode set to %d\n", m); }
+
     } else if (s == "on")  { mode = MANUAL; fanSet(true);  Serial.println("Manual ON"); }
-      else if (s == "off") { mode = MANUAL; fanSet(false); Serial.println("Manual OFF"); }
-      else if (s.startsWith("set rh ")) { rhSetpoint = s.substring(7).toFloat(); Serial.printf("RH setpoint=%.1f\n", rhSetpoint); }
-      else if (s.startsWith("set mq ")) { mq7ThresholdRaw = s.substring(7).toInt(); Serial.printf("MQ7 threshold=%d\n", mq7ThresholdRaw); }
+    else if (s == "off")   { mode = MANUAL; fanSet(false); Serial.println("Manual OFF"); }
+    else if (s.startsWith("set rh ")) { rhSetpoint = s.substring(7).toFloat(); Serial.printf("RH setpoint=%.1f\n", rhSetpoint); }
+    else if (s.startsWith("set mq ")) { mq7ThresholdRaw = s.substring(7).toInt(); Serial.printf("MQ7 threshold=%d\n", mq7ThresholdRaw); }
   }
 
   delay(20);
