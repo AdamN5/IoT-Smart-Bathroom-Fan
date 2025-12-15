@@ -27,7 +27,8 @@ void handleData() {
   json += "\"gas\":" + String(mq7Raw) + ",";
   json += "\"fan\":" + String(fanDuty) + ",";
   json += "\"mode\":\"" + String(autoMode ? "AUTO" : "MANUAL") + "\",";
-  json += "\"quiet\":\"" + String(quietMode ? "ON" : "OFF") + "\"";
+  json += "\"quiet\":\"" + String(quietMode ? "ON" : "OFF") + "\",";
+  json += "\"distance\":" + String(distanceCM);
   json += "}";
 
   server.send(200, "application/json", json);
@@ -46,6 +47,8 @@ void handleRoot() {
   page += "<p><strong>Humidity:</strong> <span id='hum'></span> %</p>";
   page += "<p><strong>Temperature:</strong> <span id='temp'></span> °C</p>";
   page += "<p><strong>Gas:</strong> <span id='gas'></span></p>";
+  page += "<p><strong>Distance:</strong> <span id='dist'></span> cm</p>";
+
 
   page += homePageControls;
   page += homePageFooter;
@@ -136,4 +139,3 @@ void webserver_setup() {
   server.begin();
   Serial.println("HTTP server started");
 }
-
