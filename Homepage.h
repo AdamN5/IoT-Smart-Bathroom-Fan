@@ -22,6 +22,7 @@ function updateData() {
       document.getElementById("fan").innerText = d.fan;
       document.getElementById("mode").innerText = d.mode;
       document.getElementById("quiet").innerText = d.quiet;
+      document.getElementById("dist").innerText = d.distance;
     });
 }
 

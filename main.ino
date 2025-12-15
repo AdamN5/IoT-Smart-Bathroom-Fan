@@ -13,8 +13,14 @@ const int pwmResBits   = 8;
 
 const int mq7Pin       = 34;
 
+
 // sensors
 Adafruit_BME280 bme;
+
+// HC SR04
+const int trigPin = 5;
+const int echoPin = 18;
+long distanceCM = 0;
 
 // data
 float temperatureC = 0.0;
@@ -40,15 +46,36 @@ void setup() {
     bme.begin(0x77);
   }
 
+  // HC SR04
+pinMode(trigPin, OUTPUT);
+pinMode(echoPin, INPUT);
+
   // setup website and server
   webserver_setup();
 }
 
 // Sensor reads
+
+long readDistance() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000);
+  long dist = duration * 0.0343 / 2;
+
+  if (dist == 0 || dist > 400) return -1;
+  return dist;
+}
+
 void readSensors() {
   mq7Raw       = analogRead(mq7Pin);
   temperatureC = bme.readTemperature();
   humidity     = bme.readHumidity();
+  distanceCM   = readDistance();
 
   // AUTO MODE
   if (autoMode) {
@@ -59,6 +86,14 @@ void readSensors() {
       fanDuty = 0;
     }
 
+    // OCCUPANCY QUIET MODE
+if (distanceCM > 0 && distanceCM < 130) {
+  quietMode = true;
+} 
+else {
+  quietMode = false;
+}
+
     ledcWrite(pwmChannel, fanDuty);
   }
 }
@@ -68,4 +103,3 @@ void loop() {
   readSensors();
   server.handleClient();
 }
-
