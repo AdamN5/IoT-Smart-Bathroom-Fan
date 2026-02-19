@@ -13,6 +13,12 @@ const int pwmResBits   = 8;
 
 const int mq7Pin       = 34;
 
+// Indicator LED
+const int indicatorLedPin = 27;
+
+unsigned long lastBlinkTime = 0;
+bool ledState = false;
+const unsigned long blinkInterval = 1000;
 
 // sensors
 Adafruit_BME280 bme;
@@ -32,8 +38,29 @@ bool autoMode  = false;
 bool quietMode = false;
 
 // SETUP
+
+ // Indicator LED to show when system is on and what mode its in
+ // LED stays solid when in manual mode and blinks when in auto mode
+void updateModeLED() {
+
+  if (autoMode == true) {
+    if (millis() - lastBlinkTime >= blinkInterval) { // using millis to create a non-blocking blink
+      lastBlinkTime = millis(); // update last blink time
+      ledState = !ledState; 
+      digitalWrite(indicatorLedPin, ledState);  
+    }
+  }
+  else {
+    digitalWrite(indicatorLedPin, HIGH);   
+  }
+}
+
 void setup() {
   Serial.begin(115200);
+
+  // setup indicator LED
+  pinMode(indicatorLedPin, OUTPUT);
+  digitalWrite(indicatorLedPin, LOW);
 
   // PWM
   ledcSetup(pwmChannel, pwmFreq, pwmResBits);
@@ -47,8 +74,8 @@ void setup() {
   }
 
   // HC SR04
-pinMode(trigPin, OUTPUT);
-pinMode(echoPin, INPUT);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
 
   // setup website and server
   webserver_setup();
@@ -101,5 +128,6 @@ else {
 // Main Loop
 void loop() {
   readSensors();
+  updateModeLED();
   server.handleClient();
 }
