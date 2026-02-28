@@ -9,14 +9,15 @@ extern int mq7Raw;
 extern int fanDuty;
 extern bool autoMode;
 extern bool quietMode;
+extern long distanceCM;
 
 extern const int pwmChannel;
 
 WebServer server(80);
 
 // wifi name and password
-const char* ssid     = "12";
-const char* password = "helloapple12";
+const char* ssid     = "TP-Link_CAB0";
+const char* password = "23164208";
 
 // data
 

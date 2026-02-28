@@ -9,9 +9,14 @@ String homePageHeader = R"====(
   .box { background:white; padding:15px; border-radius:6px; margin-bottom:15px; }
   button { padding:10px; margin:5px; border:none; border-radius:4px; background:#2196f3; color:white; }
   button:hover { background:#0b7dda; }
+
+  .sliderWrap { margin-top:10px; }
+  input[type=range] { width: 100%; }
 </style>
 
 <script>
+let draggingSlider = false;
+
 function updateData() {
   fetch('/data')
     .then(r => r.json())
@@ -23,6 +28,14 @@ function updateData() {
       document.getElementById("mode").innerText = d.mode;
       document.getElementById("quiet").innerText = d.quiet;
       document.getElementById("dist").innerText = d.distance;
+
+      // keep slider in sync (but don't fight user while dragging)
+      const s = document.getElementById("fanSlider");
+      const v = document.getElementById("fanSliderVal");
+      if (s && v && !draggingSlider) {
+        s.value = d.fan;
+        v.innerText = d.fan;
+      }
     });
 }
 
@@ -33,6 +46,11 @@ function sendCmd(c) {
   fetch('/cmd?cmd=' + c)
     .then(r => r.text())
     .then(t => { updateData(); });
+}
+
+function sendSpeed(val) {
+  document.getElementById("fanSliderVal").innerText = val;
+  fetch('/cmd?cmd=speed' + val);
 }
 </script>
 
@@ -66,9 +84,22 @@ String homePageControls = R"====(
 <button onclick="sendCmd('mode quiet_off')">Quiet Mode OFF</button>
 <br><br>
 
-<button onclick="sendCmd('speed255')">Fan Full</button>
-<button onclick="sendCmd('speed128')">Fan Medium</button>
-<button onclick="sendCmd('speed0')">Fan Off</button>
+<div class="sliderWrap">
+  <p><strong>Fan Speed Slider:</strong> <span id="fanSliderVal">0</span></p>
+  <input
+    id="fanSlider"
+    type="range"
+    min="0"
+    max="255"
+    value="0"
+    onmousedown="draggingSlider=true"
+    onmouseup="draggingSlider=false"
+    ontouchstart="draggingSlider=true"
+    ontouchend="draggingSlider=false"
+    oninput="sendSpeed(this.value)"
+  >
+  <p style="font-size:12px;">(Works in MANUAL mode. Auto mode ignores speed commands.)</p>
+</div>
 
 )====";
 
