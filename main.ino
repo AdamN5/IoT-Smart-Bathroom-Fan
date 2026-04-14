@@ -3,6 +3,8 @@
 #include <Adafruit_BME280.h>
 
 void webserver_setup();
+void checkAlerts();
+void sendToThingSpeak();
 extern WebServer server;
 
 // pin setup
@@ -13,7 +15,7 @@ const int pwmResBits   = 8;
 
 const int mq7Pin       = 34;
 
-const int ModeLEDPin   = 27;
+// const int ModeLEDPin   = 27; // Not used
 
 // sensors
 Adafruit_BME280 bme;
@@ -29,8 +31,17 @@ float humidity     = 0.0;
 int   mq7Raw       = 0;
 int   fanDuty      = 0;
 
-bool autoMode  = false;
-bool quietMode = false;
+bool autoMode         = true;
+bool quietMode        = false;
+bool runOnMode        = false;
+bool runOnEnabled     = true;
+bool occupied         = false;
+bool occupancyEnabled = true;
+
+unsigned long runOnStartTime  = 0;
+const unsigned long RUN_ON_MS = 5UL * 60UL * 1000UL;  // 5 minutes
+
+bool prevOccupied = false;
 
 // SETUP
 void setup() {
@@ -41,22 +52,21 @@ void setup() {
   ledcAttachPin(pwmPin, pwmChannel);
   ledcWrite(pwmChannel, 0);
 
-  // BME280 using i2c to communicate with esp
+  // BME280
   Wire.begin(21, 22);
   if (!bme.begin(0x76)) {
     bme.begin(0x77);
   }
 
   // HC SR04
-pinMode(trigPin, OUTPUT);
-pinMode(echoPin, INPUT);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
 
   // setup website and server
   webserver_setup();
 }
 
 // Sensor reads
-
 long readDistance() {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
@@ -80,20 +90,40 @@ void readSensors() {
 
   // AUTO MODE
   if (autoMode) {
-    if (humidity > 75) {
-      fanDuty = (quietMode ? 128 : 255);
-    }
-    else if (humidity < 60) {
-      fanDuty = 0;
+    occupied = occupancyEnabled && (distanceCM > 0 && distanceCM <= 10);
+
+    if (occupied) {
+      // Someone in room, fan on at quiet speed
+      quietMode  = true;
+      runOnMode  = false;
+      fanDuty    = 40;
+    } else if (prevOccupied && !runOnMode && runOnEnabled) {
+      // start 5 min run on
+      runOnMode      = true;
+      runOnStartTime = millis();
+      quietMode      = true;
+      fanDuty        = 40;
+    } else if (runOnMode) {
+      if (millis() - runOnStartTime >= RUN_ON_MS) {
+        // run on expired
+        runOnMode = false;
+        quietMode = false;
+        fanDuty   = 0;
+      } else {
+        quietMode = true;
+        fanDuty   = 40;
+      }
+    } else {
+      quietMode = false;
+      fanDuty   = 0;
     }
 
-    // OCCUPANCY QUIET MODE
-if (distanceCM > 0 && distanceCM < 130) {
-  quietMode = true;
-} 
-else {
-  quietMode = false;
-}
+    prevOccupied = occupied;
+
+    // Humidity override
+    if (humidity > 70) {
+      fanDuty = 255;
+    }
 
     ledcWrite(pwmChannel, fanDuty);
   }
@@ -102,5 +132,7 @@ else {
 // Main Loop
 void loop() {
   readSensors();
+  checkAlerts();
+  sendToThingSpeak();
   server.handleClient();
 }

@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include "Homepage.h"
+#include "secrets.h"
 
 // external variables from webserver
 extern float temperatureC;
@@ -9,15 +10,23 @@ extern int mq7Raw;
 extern int fanDuty;
 extern bool autoMode;
 extern bool quietMode;
+extern bool runOnMode;
+extern bool runOnEnabled;
+extern bool occupied;
+extern bool occupancyEnabled;
 extern long distanceCM;
 
 extern const int pwmChannel;
 
+void sendSMS(String message);
+extern String alertNumber;
+extern bool   smsEnabled;
+
 WebServer server(80);
 
-// wifi name and password
-const char* ssid     = "TP-Link_CAB0";
-const char* password = "23164208";
+// wifi credentials loaded from secrets.h
+const char* ssid     = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
 // data
 
@@ -29,26 +38,35 @@ void handleData() {
   json += "\"fan\":" + String(fanDuty) + ",";
   json += "\"mode\":\"" + String(autoMode ? "AUTO" : "MANUAL") + "\",";
   json += "\"quiet\":\"" + String(quietMode ? "ON" : "OFF") + "\",";
-  json += "\"distance\":" + String(distanceCM);
+  json += "\"runon\":" + String(runOnMode ? "true" : "false") + ",";
+  json += "\"runonEnabled\":" + String(runOnEnabled ? "true" : "false") + ",";
+  json += "\"occupied\":" + String(occupied ? "true" : "false") + ",";
+  json += "\"occupancyEnabled\":" + String(occupancyEnabled ? "true" : "false") + ",";
+  json += "\"distance\":" + String(distanceCM) + ",";
+  json += "\"alertNumber\":\"" + alertNumber + "\",";
+  json += "\"smsEnabled\":" + String(smsEnabled ? "true" : "false");
   json += "}";
 
   server.send(200, "application/json", json);
 }
 
-// main webpage 
+// main webpage
 void handleRoot() {
   String page = homePageHeader;
 
-  page += "<p><strong>Mode:</strong> <span id='mode'></span></p>";
-  page += "<p><strong>Quiet Mode:</strong> <span id='quiet'></span></p>";
-  page += "<p><strong>Fan Duty:</strong> <span id='fan'></span></p>";
+  page += "<p><b>Mode:</b> <span id='mode'></span></p>";
+  page += "<p><b>Quiet Mode:</b> <span id='quiet'></span></p>";
+  page += "<p><b>Occupied:</b> <span id='occupied'></span> (enabled: <span id='occupancyEnabled'></span>)</p>";
+  page += "<p><b>Run-On:</b> <span id='runon'></span> (enabled: <span id='runonEnabled'></span>)</p>";
+  page += "<p><b>Fan Duty:</b> <span id='fan'></span></p>";
+  page += "<p><b>SMS Alerts:</b> <span id='smsEnabled'></span></p>";
 
   page += homePageSensors;
 
-  page += "<p><strong>Humidity:</strong> <span id='hum'></span> %</p>";
-  page += "<p><strong>Temperature:</strong> <span id='temp'></span> °C</p>";
-  page += "<p><strong>Gas:</strong> <span id='gas'></span></p>";
-  page += "<p><strong>Distance:</strong> <span id='dist'></span> cm</p>";
+  page += "<div class='big' id='hum'>--</div><div class='unit'>Humidity %</div>";
+  page += "<div class='big' id='temp'>--</div><div class='unit'>Temperature °C</div>";
+  page += "<div class='big' id='gas'>--</div><div class='unit'>CO Gas</div>";
+  page += "<div class='big' id='dist'>--</div><div class='unit'>Distance cm</div>";
 
 
   page += homePageControls;
@@ -89,6 +107,47 @@ void handleCommand() {
   if (cmd == "mode quiet_off") {
     quietMode = false;
     server.send(200, "text/plain", "QUIET MODE OFF");
+    return;
+  }
+
+  if (cmd == "occupancy_enable") {
+    occupancyEnabled = true;
+    server.send(200, "text/plain", "OCCUPANCY ENABLED");
+    return;
+  }
+  if (cmd == "occupancy_disable") {
+    occupancyEnabled = false;
+    occupied         = false;  // clear current occupied state
+    server.send(200, "text/plain", "OCCUPANCY DISABLED");
+    return;
+  }
+
+  if (cmd == "runon_enable") {
+    runOnEnabled = true;
+    server.send(200, "text/plain", "RUN-ON ENABLED");
+    return;
+  }
+  if (cmd == "runon_disable") {
+    runOnEnabled = false;
+    runOnMode    = false;  // cancel any active run on
+    server.send(200, "text/plain", "RUN-ON DISABLED");
+    return;
+  }
+
+  if (cmd.startsWith("setnum:")) {
+    alertNumber = cmd.substring(7);
+    server.send(200, "text/plain", "NUMBER SET: " + alertNumber);
+    return;
+  }
+
+  if (cmd == "sms_enable") {
+    smsEnabled = true;
+    server.send(200, "text/plain", "SMS ENABLED");
+    return;
+  }
+  if (cmd == "sms_disable") {
+    smsEnabled = false;
+    server.send(200, "text/plain", "SMS DISABLED");
     return;
   }
 
