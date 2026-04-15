@@ -88,13 +88,37 @@ function updateData() {
 
       document.getElementById("mode").innerText             = d.mode;
       document.getElementById("quiet").innerText            = d.quiet;
+      const quietBtn = document.getElementById("quietToggle");
+      if (quietBtn) {
+        quietBtn.innerText = d.quiet === "ON" ? "Quiet ON" : "Quiet OFF";
+        quietBtn.className = d.quiet === "ON" ? "purple" : "grey";
+      }
       document.getElementById("occupied").innerText         = d.occupied;
       document.getElementById("occupancyEnabled").innerText = d.occupancyEnabled;
       document.getElementById("runon").innerText            = d.runon;
       document.getElementById("runonEnabled").innerText     = d.runonEnabled;
       document.getElementById("fan").innerText              = d.fan;
       document.getElementById("smsEnabled").innerText       = d.smsEnabled;
+      document.getElementById("ecoMode").innerText          = d.ecoMode;
       document.getElementById("alertNumber").innerText      = d.alertNumber;
+
+      const occupancyBtn = document.getElementById("occupancyToggle");
+      if (occupancyBtn) {
+        occupancyBtn.innerText = d.occupancyEnabled ? "Occupancy ON" : "Occupancy OFF";
+        occupancyBtn.className = d.occupancyEnabled ? "purple" : "grey";
+      }
+
+      const runonBtn = document.getElementById("runonToggle");
+      if (runonBtn) {
+        runonBtn.innerText = d.runonEnabled ? "Run-On ON" : "Run-On OFF";
+        runonBtn.className = d.runonEnabled ? "purple" : "grey";
+      }
+
+      const ecoBtn = document.getElementById("ecoToggle");
+      if (ecoBtn) {
+        ecoBtn.innerText   = d.ecoMode ? "Eco ON" : "Eco OFF";
+        ecoBtn.className   = d.ecoMode ? "purple" : "grey";
+      }
 
       const modeBtn = document.getElementById("modeToggle");
       if (modeBtn) modeBtn.innerText = d.mode === "AUTO" ? "Switch to Manual" : "Switch to Auto";
@@ -113,7 +137,14 @@ function updateData() {
 
       const s = document.getElementById("fanSlider");
       const v = document.getElementById("fanSliderVal");
-      if (s && v && !draggingSlider) { s.value = d.fan; v.innerText = d.fan; }
+      if (s && v && !draggingSlider) {
+        let pct;
+        if (d.fan === 0)       pct = 0;
+        else if (d.fan <= 40)  pct = 1;
+        else                   pct = Math.round(((d.fan - 40) * 99 / 215) + 1);
+        s.value = pct;
+        v.innerText = pct + "%";
+      }
     });
 }
 
@@ -124,12 +155,28 @@ function sendCmd(c) {
   fetch('/cmd?cmd=' + c).then(() => updateData());
 }
 function sendSpeed(val) {
-  document.getElementById("fanSliderVal").innerText = val;
+  document.getElementById("fanSliderVal").innerText = val + "%";
   fetch('/cmd?cmd=speed' + val);
 }
 function toggleMode() {
   const cur = document.getElementById("mode").innerText;
   sendCmd(cur === "AUTO" ? "mode manual" : "mode auto");
+}
+function toggleQuiet() {
+  const on = document.getElementById("quiet").innerText === "ON";
+  sendCmd(on ? "mode quiet_off" : "mode quiet_on");
+}
+function toggleEco() {
+  const on = document.getElementById("ecoMode").innerText === "true";
+  sendCmd(on ? "eco_disable" : "eco_enable");
+}
+function toggleOccupancy() {
+  const on = document.getElementById("occupancyEnabled").innerText === "true";
+  sendCmd(on ? "occupancy_disable" : "occupancy_enable");
+}
+function toggleRunOn() {
+  const on = document.getElementById("runonEnabled").innerText === "true";
+  sendCmd(on ? "runon_disable" : "runon_enable");
 }
 function toggleSMS() {
   const on = document.getElementById("smsEnabled").innerText === "true";
@@ -168,11 +215,13 @@ String homePageControls = R"====(
 <button id="smsToggle" class="green" onclick="toggleSMS()">SMS ON</button>
 
 <div id="autoControls" style="display:none" class="section">
-  <button class="purple" onclick="sendCmd('occupancy_enable')">Occupancy ON</button>
-  <button class="grey"   onclick="sendCmd('occupancy_disable')">Occupancy OFF</button>
+  <button id="occupancyToggle" class="purple" onclick="toggleOccupancy()">Occupancy ON</button>
   <br>
-  <button class="purple" onclick="sendCmd('runon_enable')">Run-On ON</button>
-  <button class="grey"   onclick="sendCmd('runon_disable')">Run-On OFF</button>
+  <button id="runonToggle" class="purple" onclick="toggleRunOn()">Run-On ON</button>
+  <br>
+  <button id="ecoToggle" class="grey" onclick="toggleEco()">Eco OFF</button>
+  <br>
+  <button id="quietToggle" class="grey" onclick="toggleQuiet()">Quiet OFF</button>
 </div>
 
 <div class="section">
@@ -182,8 +231,8 @@ String homePageControls = R"====(
 </div>
 
 <div id="sliderWrap" style="display:none" class="section">
-  <p class="lbl">Fan Speed: <strong><span id="fanSliderVal">40</span></strong></p>
-  <input id="fanSlider" type="range" min="40" max="255" value="40"
+  <p class="lbl">Fan Speed: <strong><span id="fanSliderVal">0%</span></strong></p>
+  <input id="fanSlider" type="range" min="0" max="100" value="0"
     onmousedown="draggingSlider=true" onmouseup="draggingSlider=false"
     ontouchstart="draggingSlider=true" ontouchend="draggingSlider=false"
     oninput="sendSpeed(this.value)">

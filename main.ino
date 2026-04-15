@@ -25,14 +25,31 @@ const int trigPin = 5;
 const int echoPin = 18;
 long distanceCM = 0;
 
+// MQ-7 PPM conversion
+// Adjust R0 to calibrate, measure in clean air and tweak until you get ~5-10 ppm
+const float MQ7_RL  = 10.0;   // load resistor in kΩ (check your circuit)
+const float MQ7_R0  = 10.0;   // sensor resistance in clean air (kΩ) — calibrate this
+const float MQ7_VCC = 3.3;    // ESP32 ADC reference voltage
+
+float calculatePPM(int raw) {
+  if (raw <= 0) return 0;
+  float voltage = (raw / 4095.0) * MQ7_VCC;
+  if (voltage <= 0) return 0;
+  float rs  = ((MQ7_VCC * MQ7_RL) / voltage) - MQ7_RL;
+  float ratio = rs / MQ7_R0;
+  return 99.042 * pow(ratio, -1.518);  // MQ-7 CO curve
+}
+
 // data
 float temperatureC = 0.0;
 float humidity     = 0.0;
 int   mq7Raw       = 0;
+float coPPM        = 0.0;
 int   fanDuty      = 0;
 
 bool autoMode         = true;
 bool quietMode        = false;
+bool ecoMode          = false;
 bool runOnMode        = false;
 bool runOnEnabled     = true;
 bool occupied         = false;
@@ -67,23 +84,39 @@ void setup() {
 }
 
 // Sensor reads
+long lastValidDistance = -1;
+
 long readDistance() {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
+  long readings[3];
+  int  validCount = 0;
 
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
 
-  long duration = pulseIn(echoPin, HIGH, 30000);
-  long dist = duration * 0.0343 / 2;
+    long duration = pulseIn(echoPin, HIGH, 30000);
+    long dist = duration * 0.0343 / 2;
 
-  if (dist == 0 || dist > 400) return -1;
-  return dist;
+    if (dist > 0 && dist <= 400) {
+      readings[validCount++] = dist;
+    }
+    delay(10);
+  }
+
+  if (validCount == 0) return lastValidDistance;  // hold last good reading
+
+  long sum = 0;
+  for (int i = 0; i < validCount; i++) sum += readings[i];
+  lastValidDistance = sum / validCount;
+  return lastValidDistance;
 }
 
 void readSensors() {
   mq7Raw       = analogRead(mq7Pin);
+  coPPM        = calculatePPM(mq7Raw);
   temperatureC = bme.readTemperature();
   humidity     = bme.readHumidity();
   distanceCM   = readDistance();
@@ -93,36 +126,30 @@ void readSensors() {
     occupied = occupancyEnabled && (distanceCM > 0 && distanceCM <= 10);
 
     if (occupied) {
-      // Someone in room, fan on at quiet speed
-      quietMode  = true;
       runOnMode  = false;
-      fanDuty    = 40;
+      fanDuty    = quietMode ? 40 : (ecoMode ? 100 : 255);  // quiet wins if both on
     } else if (prevOccupied && !runOnMode && runOnEnabled) {
       // start 5 min run on
       runOnMode      = true;
       runOnStartTime = millis();
-      quietMode      = true;
-      fanDuty        = 40;
+      fanDuty        = ecoMode ? 100 : 255;  // quiet doesn't apply to run-on
     } else if (runOnMode) {
       if (millis() - runOnStartTime >= RUN_ON_MS) {
         // run on expired
         runOnMode = false;
-        quietMode = false;
         fanDuty   = 0;
       } else {
-        quietMode = true;
-        fanDuty   = 40;
+        fanDuty   = ecoMode ? 100 : 255;  // quiet doesn't apply to run-on
       }
     } else {
-      quietMode = false;
       fanDuty   = 0;
     }
 
     prevOccupied = occupied;
 
-    // Humidity override
+    // Humidity override — eco caps at 100, otherwise full speed
     if (humidity > 70) {
-      fanDuty = 255;
+      fanDuty = ecoMode ? 100 : 255;
     }
 
     ledcWrite(pwmChannel, fanDuty);
