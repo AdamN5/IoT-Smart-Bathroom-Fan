@@ -1,15 +1,16 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include "Homepage.h"
-#include "secrets.h"
 
 // external variables from webserver
 extern float temperatureC;
 extern float humidity;
-extern int mq7Raw;
+extern int   mq7Raw;
+extern float coPPM;
 extern int fanDuty;
 extern bool autoMode;
 extern bool quietMode;
+extern bool ecoMode;
 extern bool runOnMode;
 extern bool runOnEnabled;
 extern bool occupied;
@@ -24,9 +25,9 @@ extern bool   smsEnabled;
 
 WebServer server(80);
 
-// wifi credentials loaded from secrets.h
-const char* ssid     = WIFI_SSID;
-const char* password = WIFI_PASSWORD;
+// wifi name and password
+const char* ssid     = "TP-Link_CAB0";
+const char* password = "23164208";
 
 // data
 
@@ -34,7 +35,7 @@ void handleData() {
   String json = "{";
   json += "\"humidity\":" + String(humidity, 1) + ",";
   json += "\"temperature\":" + String(temperatureC, 1) + ",";
-  json += "\"gas\":" + String(mq7Raw) + ",";
+  json += "\"gas\":" + String(coPPM, 1) + ",";
   json += "\"fan\":" + String(fanDuty) + ",";
   json += "\"mode\":\"" + String(autoMode ? "AUTO" : "MANUAL") + "\",";
   json += "\"quiet\":\"" + String(quietMode ? "ON" : "OFF") + "\",";
@@ -44,13 +45,14 @@ void handleData() {
   json += "\"occupancyEnabled\":" + String(occupancyEnabled ? "true" : "false") + ",";
   json += "\"distance\":" + String(distanceCM) + ",";
   json += "\"alertNumber\":\"" + alertNumber + "\",";
-  json += "\"smsEnabled\":" + String(smsEnabled ? "true" : "false");
+  json += "\"smsEnabled\":" + String(smsEnabled ? "true" : "false") + ",";
+  json += "\"ecoMode\":" + String(ecoMode ? "true" : "false");
   json += "}";
 
   server.send(200, "application/json", json);
 }
 
-// main webpage
+// main webpage 
 void handleRoot() {
   String page = homePageHeader;
 
@@ -60,12 +62,13 @@ void handleRoot() {
   page += "<p><b>Run-On:</b> <span id='runon'></span> (enabled: <span id='runonEnabled'></span>)</p>";
   page += "<p><b>Fan Duty:</b> <span id='fan'></span></p>";
   page += "<p><b>SMS Alerts:</b> <span id='smsEnabled'></span></p>";
+  page += "<p><b>Eco Mode:</b> <span id='ecoMode'></span></p>";
 
   page += homePageSensors;
 
   page += "<div class='big' id='hum'>--</div><div class='unit'>Humidity %</div>";
   page += "<div class='big' id='temp'>--</div><div class='unit'>Temperature °C</div>";
-  page += "<div class='big' id='gas'>--</div><div class='unit'>CO Gas</div>";
+  page += "<div class='big' id='gas'>--</div><div class='unit'>CO (ppm)</div>";
   page += "<div class='big' id='dist'>--</div><div class='unit'>Distance cm</div>";
 
 
@@ -122,6 +125,17 @@ void handleCommand() {
     return;
   }
 
+  if (cmd == "eco_enable") {
+    ecoMode = true;
+    server.send(200, "text/plain", "ECO MODE ON");
+    return;
+  }
+  if (cmd == "eco_disable") {
+    ecoMode = false;
+    server.send(200, "text/plain", "ECO MODE OFF");
+    return;
+  }
+
   if (cmd == "runon_enable") {
     runOnEnabled = true;
     server.send(200, "text/plain", "RUN-ON ENABLED");
@@ -159,8 +173,13 @@ void handleCommand() {
       return;
     }
 
-    int value = cmd.substring(5).toInt();
-    fanDuty = constrain(value, 0, 255);
+    int percent = constrain(cmd.substring(5).toInt(), 0, 100);
+    // 0% = off, 1% = PWM 40, 100% = PWM 255
+    if (percent == 0) {
+      fanDuty = 0;
+    } else {
+      fanDuty = 40 + ((percent - 1) * 215) / 99;
+    }
     ledcWrite(pwmChannel, fanDuty);
 
     server.send(200, "text/plain", "SPEED SET");
