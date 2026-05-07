@@ -26,8 +26,8 @@ extern bool   smsEnabled;
 WebServer server(80);
 
 // wifi name and password
-const char* ssid     = "TP-Link_CAB0";
-const char* password = "23164208";
+const char* ssid     = "ssid";
+const char* password = "password";
 
 // data
 
